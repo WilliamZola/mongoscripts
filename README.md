@@ -25,25 +25,25 @@ Requirements:
 Information collected:
  
  * 'conf' directory
- ** Contents of the collections, databases, locks, lockpings, mongos, settings, shards, and tags collections from the config database
- ** A 'mongodump' of the config database
- ** The output of 'sh.status(true)'
+     * Contents of the collections, databases, locks, lockpings, mongos, settings, shards, and tags collections from the config database
+     * A 'mongodump' of the config database
+     * The output of 'sh.status(true)'
 
  * 'db' directory
- ** Collection stats() and indexes for every collection in every database in the cluster
+     * Collection stats() and indexes for every collection in every database in the cluster
 
  * 'SHARD-*' directory
- ** There is one such directory for each shard in the cluster
- ** This directory contains the following information from the primary for the shard:
- *** db.serverStatus()
- *** Connection pool stats
- *** db.currentOP()
- *** As much of the log file as is in the internal capped collection
- ** If the shard is a replica set, this directory will also contain the following information from the primary node:
- *** rs.status()
- *** Replication information
+     * There is one such directory for each shard in the cluster
+     * This directory contains the following information from the primary for the shard:
+         * db.serverStatus()
+         * Connection pool stats
+         * db.currentOP()
+         * As much of the log file as is in the internal capped collection
+     * If the shard is a replica set, this directory will also contain the following information from the primary node:
+         * rs.status()
+         * Replication information
 
  * 'mongos-*' directory
- ** There is one such directory for each 'mongos' listed in the config database
- ** This directory contains the same information for each 'mongos' that is collected for a standalone shard
+     * There is one such directory for each 'mongos' listed in the config database
+     * This directory contains the same information for each 'mongos' that is collected for a standalone shard
 
