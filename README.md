@@ -5,10 +5,6 @@ Useful Scripts for working with MongoDB
 
 ### getShardingDiags.sh ###
 
-This script will 
-
-### getShardingDiags.sh ###
-
 This script will connect to a sharded cluster, retrieve all of the 
 interesting and useful diagnostic information I could think of, and 
 put it all in a neat file in /tmp.
