@@ -4,8 +4,8 @@
 #  save it into a set of files
 #
 
-DEBUG=true
 DEBUG=
+DEBUG=true
 
 function debug()
 {
@@ -40,19 +40,34 @@ HOST=localhost
 PORT=
 
 function run_mongo_command() {
-    debug "run_mongo_command:" "command='$@'"
-    mongo --quiet --host $HOST --port $PORT << EOF
+    local tmpfile=/tmp/js$$.js
+    debug "run_mongo_command:" "tmpfile=$tmpfile" "command='$@'"
+    cat << EOF > $tmpfile
     $@
 EOF
+    mongo --norc --quiet --host $HOST --port $PORT $tmpfile
+    rm -f $tmpfile
 }
 
 function run_mongo_command_withhost() {
+    local tmpfile=/tmp/js$$.js
     local host=$1
     shift
     debug "run_mongo_command_withhost:" "host=$host" "command=$@"
-    mongo --quiet --host $host << EOF
+    cat << EOF > $tmpfile
     $@
 EOF
+    mongo --norc --quiet --host $host $tmpfile
+    rm -f $tmpfile
+}
+
+function run_1mongo_command() {
+    local host=$1
+    local command=$2
+
+    command="printjson($command)"
+    debug "run_1mongo_command:" "host=$host" "command=$command"
+    run_mongo_command_withhost $host "$command"
 }
 
 
@@ -61,7 +76,7 @@ function check_for_mongos() {
     debug "check_for_mongos:"
     which mongo > /dev/null || err_exit "'mongo' not in \$PATH"
 
-    res=$(run_mongo_command "db.isMaster().msg")
+    res=$(run_mongo_command "print(db.isMaster().msg)")
     [[ $res == "isdbgrid" ]] || err_exit "did not connect to a 'mongos': isMaster().msg=$res"
 }
 
@@ -110,8 +125,29 @@ function build_dumpdir() {
     local host=$1
     local dumpdir=/tmp/$host
     debug "build_dumpdir" "dumpdir=$dumpdir"
+    #
+    # Todo -- better error message if directory already exists
+    #
     mkdir $dumpdir || { echo ""; return; }
     echo $dumpdir
+}
+
+function dump_one_config_collection() {
+    local outfile=$1
+    local collection=$2
+    debug "dump_one_config_collection" "outfile=$outfile" "collection=$collection"
+
+    echo "contents of $collection" > $outfile
+
+    local cmd="
+      cdb = db.getSiblingDB('config');
+      cur = cdb.$collection.find();
+      while (cur.hasNext() ) { 
+	doc = cur.next();
+	printjson(doc);
+      }
+    ";
+    run_mongo_command "$cmd" >> $outfile
 }
 
 function dump_config_information() {
@@ -123,18 +159,14 @@ function dump_config_information() {
 
     for i in collections databases locks lockpings mongos settings shards tags
     do
-        cmd="use config
-        DBQuery.shellBatchSize=5000
-        print( 'contents of: $i' );
-        db.$i.find()"
-        run_mongo_command "$cmd" | tail +3 > $outdir/$i.txt
+	dump_one_config_collection $outdir/$i.txt $i
     done
 
     # serverStatus
-    run_mongo_command "db.serverStatus()" > $outdir/serverStatus.txt
+    run_mongo_command "printjson(db.serverStatus())" > $outdir/serverStatus.txt
 
     # serverBuildInfo
-    run_mongo_command "db.serverBuildInfo()" > $outdir/serverBuildInfo.txt
+    run_mongo_command "printjson(db.serverBuildInfo())" > $outdir/serverBuildInfo.txt
 
     # sh.status()
     run_mongo_command "sh.status(true)" > $outdir/shardingStatus.txt
@@ -177,7 +209,7 @@ function dump_collection_information() {
        })
 EOF
         # run it
-        mongo --quiet --host $HOST --port $PORT $tmpfile > $dbfile
+        mongo --norc --quiet --host $HOST --port $PORT $tmpfile > $dbfile
     done
 
     rm -f $tmpfile
@@ -213,8 +245,8 @@ function find_primary() {
     local tmpfile=/tmp/sh$$.js
     debug "find_primary: host=$host tmpfile=$tmpfile"
     cat << EOF > $tmpfile
-    x = rs.status()
-    x.members.forEach( function( doc ) { if(doc.stateStr == "PRIMARY") print (doc.name) } );
+	    x = rs.status()
+	    x.members.forEach( function( doc ) { if(doc.stateStr == "PRIMARY") print (doc.name) } );
 EOF
     mongo --quiet --host $host $tmpfile
     rm -f $tmpfile
@@ -227,11 +259,11 @@ function dump_one_node() {
 
     mkdir $outdir
 
-    run_mongo_command_withhost $host "db.serverStatus()" > $outdir/serverStatus.txt
-    run_mongo_command_withhost $host "db.runCommand({connPoolStats:1});" > $outdir/connectionpool.txt
-    run_mongo_command_withhost $host "db.currentOP()" > $outdir/currentOP.txt
-    run_mongo_command_withhost $host "db.adminCommand({hostInfo:1})" > $outdir/hostInfo.txt
-    run_mongo_command_withhost $host "db.adminCommand({getLog:'global'})" > $outdir/globalLog.txt
+    run_1mongo_command $host "db.serverStatus()" > $outdir/serverStatus.txt
+    run_1mongo_command $host "db.runCommand({connPoolStats:1})" > $outdir/connectionpool.txt
+    run_1mongo_command $host "db.currentOP()" > $outdir/currentOP.txt
+    run_1mongo_command $host "db.adminCommand({hostInfo:1})" > $outdir/hostInfo.txt
+    run_1mongo_command $host "db.adminCommand({getLog:'global'})" > $outdir/globalLog.txt
 }
 
 function dump_one_shard_rs() {
@@ -243,7 +275,7 @@ function dump_one_shard_rs() {
     dump_one_node $outdir $primary
 
     # replication stuff
-    run_mongo_command_withhost $primary "rs.status()" > $outdir/rsStatus.txt
+    run_1mongo_command $primary "rs.status()" > $outdir/rsStatus.txt
     run_mongo_command_withhost $primary "db.printReplicationInfo()" > $outdir/replication.txt
     echo "========" >> $outdir/replication.txt
     run_mongo_command_withhost $primary "db.printSlaveReplicationInfo()" >> $outdir/replication.txt
