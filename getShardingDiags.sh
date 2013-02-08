@@ -4,8 +4,8 @@
 #  save it into a set of files
 #
 
-DEBUG=
 DEBUG=true
+DEBUG=
 
 function debug()
 {
