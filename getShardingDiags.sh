@@ -25,6 +25,16 @@ function err_exit()
     exit 1
 }
 
+function err_arguments()
+{
+    if [ "$#" == "0" ]
+    then
+        echo -e "Please examine the usage options for this script - you need some arguments!\n\n"
+        usage
+        exit 1
+    fi
+}
+
 function usage()
 {
     echo "usage:
@@ -315,6 +325,8 @@ function dump_mongos_information() {
 #
 # main()
 #
+
+err_arguments
 
 parse_arguments $@
 
