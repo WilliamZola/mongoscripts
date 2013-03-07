@@ -27,7 +27,7 @@ function err_exit()
 
 function err_arguments()
 {
-    if [ "$#" == "0" ]
+    if [ $ARG -lt 1 ]
     then
         echo -e "Please examine the usage options for this script - you need some arguments!\n\n"
         usage
@@ -48,6 +48,7 @@ function usage()
 #
 HOST=localhost
 PORT=
+ARG=$#
 
 function run_mongo_command() {
     debug "run_mongo_command:" "command='$@'"
