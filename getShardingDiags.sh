@@ -25,16 +25,6 @@ function err_exit()
     exit 1
 }
 
-function err_arguments()
-{
-    if [ $ARG -lt 1 ]
-    then
-        echo -e "Please examine the usage options for this script - you need some arguments!\n\n"
-        usage
-        exit 1
-    fi
-}
-
 function usage()
 {
     echo "usage:
@@ -84,6 +74,13 @@ function parse_arguments ()
 {
     debug "parse_arguments: $@"
     PROG=$0
+
+    if [ $ARG -lt 1 ]
+    then
+        echo -e "Please examine the usage options for this script - you need some arguments!\n\n"
+        usage
+        exit 1
+    fi
 
     for i in $@
     do
@@ -326,8 +323,6 @@ function dump_mongos_information() {
 #
 # main()
 #
-
-err_arguments
 
 parse_arguments $@
 
