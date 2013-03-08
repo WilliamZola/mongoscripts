@@ -77,7 +77,7 @@ function parse_arguments ()
 
     if [ $ARG -lt 1 ]
     then
-        echo -e "Please examine the usage options for this script - you need some arguments!\n\n"
+        echo -e "Please examine the usage options for this script - you need some arguments!\n"
         usage
         exit 1
     fi
