@@ -1,4 +1,3 @@
-
 #
 # Fetch diagnostic information for a MongoDB sharded cluster and
 #  save it into a set of files
@@ -135,7 +134,7 @@ function dump_config_information() {
         DBQuery.shellBatchSize=5000
         print( 'contents of: $i' );
         db.$i.find()"
-        run_mongo_command "$cmd" | tail +3 > $outdir/$i.txt
+        run_mongo_command "$cmd" | tail -n 3 > $outdir/$i.txt
     done
 
     # serverStatus
