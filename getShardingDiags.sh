@@ -38,6 +38,7 @@ function usage()
 #
 HOST=localhost
 PORT=
+ARG=$#
 
 function run_mongo_command() {
     local tmpfile=/tmp/js$$.js
@@ -88,6 +89,13 @@ function parse_arguments ()
 {
     debug "parse_arguments: $@"
     PROG=$0
+
+    if [ $ARG -lt 1 ]
+    then
+        echo -e "Please examine the usage options for this script - you need some arguments!\n"
+        usage
+        exit 1
+    fi
 
     for i in $@
     do
