@@ -7,6 +7,8 @@
 DEBUG=true
 DEBUG=
 
+VERSION=0.2.0
+
 function debug()
 {
     if [[ $DEBUG ]] 
@@ -118,7 +120,10 @@ function parse_arguments ()
                 ;;
             -h|--help) 
                 usage
-                exit 1;;
+                exit 0;;
+            -v|--version) 
+                echo "$VERSION"
+                exit 0;;
         esac
     done
     debug "parse_arguments:" "HOST=$HOST", "PORT=$PORT" ;
