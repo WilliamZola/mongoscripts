@@ -272,6 +272,8 @@ function dump_one_node() {
 
     mkdir $outdir
 
+    run_1mongo_command $host "db.serverCmdLineOpts()" > $outdir/serverInfo.txt
+    run_1mongo_command $host "db.serverBuildInfo()" >> $outdir/serverInfo.txt
     run_1mongo_command $host "db.serverStatus()" > $outdir/serverStatus.txt
     run_1mongo_command $host "db.runCommand({connPoolStats:1})" > $outdir/connectionpool.txt
     run_1mongo_command $host "db.currentOP()" > $outdir/currentOP.txt
@@ -366,7 +368,7 @@ parse_arguments $@
 MYHOST=$(hostname)
 DUMPDIR=$(build_dumpdir $MYHOST)
 debug "DUMPDIR=$DUMPDIR"
-[[ -z $DUMPDIR ]] && err_exit "could not create output directory"
+[[ -z $DUMPDIR ]] && err_exit "could not create output directory $DUMPDIR"
 
 
 dump_config_information "$DUMPDIR"
@@ -381,4 +383,7 @@ debug "MONGOS=$MONGOS"
 dump_mongos_information "$DUMPDIR" $MONGOS
 
 # Build aggregate file
-tar -cz -C /tmp -f /tmp/$MYHOST-MONGOS-CFG.tgz  $MYHOST
+DEST=/tmp/$MYHOST-MONGOS-CFG.tgz  
+tar -cz -C /tmp -f $DEST $MYHOST
+
+echo "Diagnostic information has been stored in $DEST"
