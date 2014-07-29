@@ -7,7 +7,8 @@
 DEBUG=true
 DEBUG=
 
-VERSION=0.2.0
+VERSION=0.3.0
+
 
 function debug()
 {
@@ -32,6 +33,8 @@ function usage()
     echo "usage:
      --host       : host to connect to (default 'localhost')
      --port       : connect to this port
+     --user       : username for authentication
+     --password   : password for authentication
      -h --help    : print this message "
 }
 
@@ -41,6 +44,11 @@ function usage()
 HOST=localhost
 PORT=
 ARG=$#
+#
+# Globals for authentication
+#
+G_AUTH=
+
 
 function run_mongo_command() {
     local tmpfile=/tmp/js$$.js
@@ -48,7 +56,7 @@ function run_mongo_command() {
     cat << EOF > $tmpfile
     $@
 EOF
-    mongo --norc --quiet --host $HOST --port $PORT $tmpfile
+    mongo $G_AUTH --norc --quiet --host $HOST --port $PORT $tmpfile
     rm -f $tmpfile
 }
 
@@ -60,7 +68,7 @@ function run_mongo_command_withhost() {
     cat << EOF > $tmpfile
     $@
 EOF
-    mongo --norc --quiet --host $host $tmpfile
+    mongo $G_AUTH --norc --quiet --host $host $tmpfile
     rm -f $tmpfile
 }
 
@@ -87,10 +95,24 @@ function check_for_mongodump() {
     which mongodump > /dev/null || err_exit "'mongodump' not in \$PATH"
 }
 
+function check_auth() {
+    local user=$1
+    local passwd=$2
+    debug "check_auth: user=$user passwd=$passwd"
+
+    [[ $user && -z $passwd ]] && err_exit "You must use either both or neither of --user and --password "
+    [[ -z $user && $passwd ]] && err_exit "You must use either both or neither of --user and --password "
+
+    [[ $user && $passwd ]] && G_AUTH="-u $user -p $passwd --authenticationDatabase admin"
+
+}
+
 function parse_arguments ()
 {
     debug "parse_arguments: $@"
     PROG=$0
+    local l_user=
+    local l_pass=
 
     if [ $ARG -lt 1 ]
     then
@@ -107,7 +129,23 @@ function parse_arguments ()
                 shift 2
                 ;;
             --host=*)
-                HOST=${1#*=} 
+                HOST=${1#*=}
+                shift
+                ;;
+            -u|--user)
+                l_user=$2
+                shift 2
+                ;;
+            --user=*)
+                l_user=${1#*=}
+                shift
+                ;;
+            -p|--password)
+                l_pass=$2
+                shift 2
+                ;;
+            --password=*)
+                l_pass=${1#*=}
                 shift
                 ;;
             -p|--port)
@@ -115,7 +153,7 @@ function parse_arguments ()
                 shift 2
                 ;;
             --port=*)
-                PORT=${1#*=} 
+                PORT=${1#*=}
                 shift
                 ;;
             -h|--help) 
@@ -126,10 +164,12 @@ function parse_arguments ()
                 exit 0;;
         esac
     done
-    debug "parse_arguments:" "HOST=$HOST", "PORT=$PORT" ;
+    debug "parse_arguments:" "HOST=$HOST", "PORT=$PORT"
     [[ -z $HOST ]] && err_exit "missing parameter --host "
     [[ -z $PORT ]] && err_exit "missing parameter --port "
 
+    check_auth $l_user $l_pass
+    debug "parse_arguments:" "l_user=$l_user" "l_pass=$l_pass" "G_AUTH=$G_AUTH" ;
     check_for_mongos
     check_for_mongodump
 }
@@ -141,6 +181,7 @@ function build_dumpdir() {
     #
     # Todo -- better error message if directory already exists
     #
+    rm -rf $dumpdir
     mkdir $dumpdir || { echo ""; return; }
     echo $dumpdir
 }
@@ -185,8 +226,8 @@ function dump_config_information() {
     run_mongo_command "sh.status(true)" > $outdir/shardingStatus.txt
 
     # Config db
-    debug "mongodump -h ${HOST}:${PORT} --out $outdir -d config"
-    mongodump -h ${HOST}:${PORT} --out $outdir -d config > $outdir/mongodump.log
+    debug "mongodump -h ${HOST}:${PORT} $G_AUTH --out $outdir -d config"
+    mongodump -h ${HOST}:${PORT} $G_AUTH --out $outdir -d config > $outdir/mongodump.log
 }
 
 
@@ -200,7 +241,7 @@ function dump_collection_information() {
     # Find all the databases that 'mongos' knows about
     #
     echo "db.adminCommand('listDatabases').databases.forEach(function(d){print(d.name)})" > $tmpfile
-    local dbs=$(mongo --quiet --host $HOST --port $PORT $tmpfile)
+    local dbs=$(mongo $G_AUTH --quiet --host $HOST --port $PORT $tmpfile)
 
     #
     # Print stats & index info for each collection in that database
@@ -222,7 +263,7 @@ function dump_collection_information() {
        })
 EOF
         # run it
-        mongo --norc --quiet --host $HOST --port $PORT $tmpfile > $dbfile
+        mongo $G_AUTH --norc --quiet --host $HOST --port $PORT $tmpfile > $dbfile
     done
 
     rm -f $tmpfile
@@ -243,16 +284,52 @@ function get_shards() {
             print(doc.host) ;           // use replica set name as shard name
     } 
 EOF
-    res=$(mongo --quiet --host $HOST --port $PORT $tmpfile)
+    res=$(mongo $G_AUTH --quiet --host $HOST --port $PORT $tmpfile)
+    status=$?
+    debug "status=$status"
+    [[ $status == 0 ]] || err_exit ""
     rm -f $tmpfile
 
     debug "res='$res'"
     echo $res
 }
 
+function check_connectivity() {
+    debug "check_connectivity: args='$@'"
+    [[ -n $1 ]] || err_exit "No information about shards!"
+
+    local conn
+
+    for i do
+        debug "i=$i"
+        case $i in
+            */*)
+                debug "handle replica set"
+                conn=$(basename $i)
+                ;;
+            *#*)
+                debug "handle non-replica set"
+                # Pick apart what was built in get_shards()
+                # host name & port is after shard name
+                conn=${i##*#}
+                ;;
+            *) err_exit "check_connectivity: cannot happen!"
+                ;;
+        esac
+        debug "connecting to $conn"
+        res=$(mongo $G_AUTH --quiet $conn --eval 'rs.slaveOk(); db.system.indexes.count()')
+        status=$?
+        debug "status='$status', res='$res'"
+        [[ $status == 0 ]] || return $status
+    done
+
+    return 0
+}
+
+
 function find_primary() {
 #
-# Todo: make this work when first node listed for RS is down 
+# Todo: make this work when first node listed for RS is down
 #
     local host=$1
     local tmpfile=/tmp/sh$$.js
@@ -261,8 +338,9 @@ function find_primary() {
 	    x = rs.status()
 	    x.members.forEach( function( doc ) { if(doc.stateStr == "PRIMARY") print (doc.name) } );
 EOF
-    mongo --quiet --host $host $tmpfile
+    res=$(mongo $G_AUTH --quiet --host $host $tmpfile)
     rm -f $tmpfile
+    echo $res
 }
 
 function dump_one_node() {
@@ -271,6 +349,11 @@ function dump_one_node() {
     debug "dump_one_node:" "outdir=$outdir" "host=$host"
 
     mkdir $outdir
+
+    res=$(mongo $G_AUTH --quiet --host $host --eval 'rs.slaveOk(); db.system.count()')
+    status=$?
+    debug "status='$status', res='$res'"
+    [[ $status == 0 ]] || { echo "unable to contact $host; $res" > $outdir/connectivity.txt; return $status; }
 
     run_1mongo_command $host "db.serverCmdLineOpts()" > $outdir/serverInfo.txt
     run_1mongo_command $host "db.serverBuildInfo()" >> $outdir/serverInfo.txt
@@ -330,14 +413,15 @@ function get_mongos() {
     local tmpfile=/tmp/sh$$.js
 
     debug "get_mongos"
-    cat > $tmpfile << EOF 
-    c = db.getSiblingDB("config").mongos.find({},{_id:1});
-    while (c.hasNext()) { 
-        doc = c.next(); 
-        print(doc._id) ;           
+    cat > $tmpfile << EOF
+    ago = new Date(Date.now() - 2 * 60 * 1000);
+    c = db.getSiblingDB("config").mongos.find({ping: {\$gte: ago} },{_id:1});
+    while (c.hasNext()) {
+        doc = c.next();
+        print(doc._id);
     } 
 EOF
-    res=$(mongo --quiet --host $HOST --port $PORT $tmpfile)
+    res=$(mongo $G_AUTH --quiet --host $HOST --port $PORT $tmpfile)
     rm -f $tmpfile
 
     debug "res='$res'"
@@ -363,6 +447,9 @@ function dump_mongos_information() {
 # main()
 #
 
+#
+# Check arguments and create output directory
+#
 parse_arguments $@
 
 MYHOST=$(hostname)
@@ -371,19 +458,36 @@ debug "DUMPDIR=$DUMPDIR"
 [[ -z $DUMPDIR ]] && err_exit "could not create output directory $DUMPDIR"
 
 
+#
+# Get list of shards; check connectivity to all of them 
+#   (Especially important if running with authentication)
+#
+SHARDS=$(get_shards) || err_exit "Cannot read config.shards collection"
+debug "SHARDS=$SHARDS"
+check_connectivity $SHARDS || err_exit "Cannot connect to all shards"
+
+#
+# Fetch and save metadata
+#
 dump_config_information "$DUMPDIR"
 dump_collection_information "$DUMPDIR"
 
-SHARDS=$(get_shards)
-debug "SHARDS=$SHARDS"
+#
+# Fetch and save information about each shard
+#
 dump_shard_information "$DUMPDIR" $SHARDS
 
+#
+# Fetch and save information about each 'mongos'
+#
 MONGOS=$(get_mongos)
 debug "MONGOS=$MONGOS"
 dump_mongos_information "$DUMPDIR" $MONGOS
 
-# Build aggregate file
-DEST=/tmp/$MYHOST-MONGOS-CFG.tgz  
+#
+# Save it all in a single file
+#
+DEST=/tmp/$MYHOST-SHARDINFO.tgz
 tar -cz -C /tmp -f $DEST $MYHOST
 
 echo "Diagnostic information has been stored in $DEST"
